@@ -33,7 +33,7 @@ database_id = "a4bfea37-3b66-4d15-a226-2600fc46bade"
 
 [[r2_buckets]]
 binding = "IMAGES"
-bucket_name = "line-harness-images"
+bucket_name = "test-lh-images"
 
 # ═══════════════════════════════════════════════════════════════
 # TenantScheduler DO — 定期ジョブ (配信・リマインド・insight 取得) を自走させる。
