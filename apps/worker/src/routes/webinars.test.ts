@@ -34,6 +34,8 @@ const dbMocks = {
   getUpcomingWebinarRegistration: vi.fn(),
   getWebinarRegistration: vi.fn(),
   recordWebinarPickerOpen: vi.fn(),
+  getWebinarFollowupConfig: vi.fn(),
+  upsertWebinarFollowupConfig: vi.fn(),
   applyMileageRulesForEvent: vi.fn(),
   getDueWebinarRegistrations: vi.fn(),
   markWebinarRegistrationNotified: vi.fn(),
@@ -854,6 +856,76 @@ describe('admin CRUD', () => {
     );
     expect(res.status).toBe(403);
     expect(dbMocks.createWebinar).not.toHaveBeenCalled();
+  });
+
+  test('GET /api/webinars/:id/followup-config — owner だけが既存設定を読める', async () => {
+    dbMocks.getWebinarById.mockResolvedValue(makeWebinar());
+    dbMocks.getWebinarFollowupConfig.mockResolvedValue({
+      webinar_id: 'w1', enabled_at: '2026-09-01T00:00:00.000Z',
+      first_delay_minutes: 30, second_delay_minutes: 1440, is_active: 1,
+      stage_enabled_at: null, picker_delay_minutes: 30, no_show_delay_minutes: 30,
+      booking_delay_minutes: 30, booking_second_delay_minutes: 1440,
+      booking_menu_id: 'menu-1', booking_url: 'https://example.com/book',
+    });
+    const res = await reqAsStaff('/api/webinars/w1/followup-config');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(expect.objectContaining({
+      success: true,
+      data: expect.objectContaining({ isActive: true, bookingMenuId: 'menu-1' }),
+    }));
+  });
+
+  test('PUT /api/webinars/:id/followup-config — owner が検証済み設定を保存できる', async () => {
+    dbMocks.getWebinarById.mockResolvedValue(makeWebinar());
+    const saved = {
+      webinar_id: 'w1', enabled_at: '2026-09-01T00:00:00.000Z',
+      first_delay_minutes: 30, second_delay_minutes: 1440, is_active: 1,
+      stage_enabled_at: null, picker_delay_minutes: 30, no_show_delay_minutes: 45,
+      booking_delay_minutes: 60, booking_second_delay_minutes: 1440,
+      booking_menu_id: 'menu-1', booking_url: 'https://example.com/book',
+    };
+    dbMocks.upsertWebinarFollowupConfig.mockResolvedValue(saved);
+    const res = await reqAsStaff('/api/webinars/w1/followup-config', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabledAt: saved.enabled_at,
+        firstDelayMinutes: 30,
+        secondDelayMinutes: 1440,
+        isActive: true,
+        stageEnabledAt: null,
+        pickerDelayMinutes: 30,
+        noShowDelayMinutes: 45,
+        bookingDelayMinutes: 60,
+        bookingSecondDelayMinutes: 1440,
+        bookingMenuId: 'menu-1',
+        bookingUrl: 'https://example.com/book',
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(dbMocks.upsertWebinarFollowupConfig).toHaveBeenCalledWith(
+      expect.anything(), 'w1', expect.objectContaining({
+        isActive: true, bookingMenuId: 'menu-1', bookingDelayMinutes: 60,
+      }),
+    );
+  });
+
+  test('PUT followup-config — staff と不正URLを拒否する', async () => {
+    dbMocks.getWebinarById.mockResolvedValue(makeWebinar());
+    const payload = {
+      enabledAt: '2026-09-01T00:00:00.000Z', firstDelayMinutes: 30,
+      secondDelayMinutes: 1440, isActive: true, pickerDelayMinutes: 30,
+      noShowDelayMinutes: 30, bookingDelayMinutes: 30, bookingSecondDelayMinutes: 1440,
+      bookingUrl: 'javascript:alert(1)',
+    };
+    const forbidden = await reqAsStaff('/api/webinars/w1/followup-config', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, 'staff');
+    expect(forbidden.status).toBe(403);
+    const invalid = await reqAsStaff('/api/webinars/w1/followup-config', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    expect(invalid.status).toBe(400);
+    expect(dbMocks.upsertWebinarFollowupConfig).not.toHaveBeenCalled();
   });
 
   test('PUT /api/webinars/:id/comments — 一括置換', async () => {

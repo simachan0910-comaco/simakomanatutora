@@ -972,6 +972,50 @@ const spec = {
     '/api/webinars/{id}/user-comments': {
       get: { tags: ['Webinars'], summary: '視聴者の生コメント一覧', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Comments' } } },
     },
+    '/api/webinars/{id}/followup-config': {
+      get: {
+        tags: ['Webinars'],
+        summary: 'ウェビナー追客設定を取得',
+        description: '設定行がない場合は data: null。追客は行を保存し isActive=true にするまで有効化されない。',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Follow-up config or null' }, '404': { description: 'Webinar not found' } },
+      },
+      put: {
+        tags: ['Webinars'],
+        summary: 'ウェビナー追客設定を保存',
+        description: 'owner/admin限定。既存の webinar_followup_configs を UPSERT する。遅延は分、0〜525600。bookingUrl は http(s) のみ。',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: [
+                  'enabledAt', 'firstDelayMinutes', 'secondDelayMinutes', 'isActive',
+                  'pickerDelayMinutes', 'noShowDelayMinutes', 'bookingDelayMinutes',
+                  'bookingSecondDelayMinutes',
+                ],
+                properties: {
+                  enabledAt: { type: 'string', format: 'date-time' },
+                  stageEnabledAt: { type: 'string', format: 'date-time', nullable: true },
+                  isActive: { type: 'boolean' },
+                  firstDelayMinutes: { type: 'integer', minimum: 0, maximum: 525600 },
+                  secondDelayMinutes: { type: 'integer', minimum: 0, maximum: 525600 },
+                  pickerDelayMinutes: { type: 'integer', minimum: 0, maximum: 525600 },
+                  noShowDelayMinutes: { type: 'integer', minimum: 0, maximum: 525600 },
+                  bookingDelayMinutes: { type: 'integer', minimum: 0, maximum: 525600 },
+                  bookingSecondDelayMinutes: { type: 'integer', minimum: 0, maximum: 525600 },
+                  bookingMenuId: { type: 'string', nullable: true },
+                  bookingUrl: { type: 'string', nullable: true, description: 'http(s) URL' },
+                },
+              },
+            },
+          },
+        },
+        responses: { '200': { description: 'Saved config' }, '400': { description: 'Invalid config' }, '403': { description: 'owner/admin required' } },
+      },
+    },
     '/webhook': {
       post: {
         tags: ['Webhook'],

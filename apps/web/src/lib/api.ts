@@ -2192,6 +2192,20 @@ export type WebinarCtaCard = {
   url: string | null
 }
 
+export type WebinarFollowupConfig = {
+  enabledAt: string
+  firstDelayMinutes: number
+  secondDelayMinutes: number
+  isActive: boolean
+  stageEnabledAt: string | null
+  pickerDelayMinutes: number
+  noShowDelayMinutes: number
+  bookingDelayMinutes: number
+  bookingSecondDelayMinutes: number
+  bookingMenuId: string | null
+  bookingUrl: string | null
+}
+
 export const webinarApi = {
   list: () => fetchApi<{ data: Webinar[] }>('/api/webinars'),
   get: (id: string) => fetchApi<{ data: Webinar }>(`/api/webinars/${id}`),
@@ -2220,4 +2234,10 @@ export const webinarApi = {
   analytics: (id: string) => fetchApi<{ data: WebinarAnalytics }>(`/api/webinars/${id}/analytics`),
   userComments: (id: string) =>
     fetchApi<{ data: WebinarUserComment[] }>(`/api/webinars/${id}/user-comments`),
+  followupConfig: (id: string) =>
+    fetchApi<{ data: WebinarFollowupConfig | null }>(`/api/webinars/${id}/followup-config`),
+  saveFollowupConfig: (id: string, input: WebinarFollowupConfig) =>
+    fetchApi<{ data: WebinarFollowupConfig }>(`/api/webinars/${id}/followup-config`, {
+      method: 'PUT', body: JSON.stringify(input),
+    }),
 }

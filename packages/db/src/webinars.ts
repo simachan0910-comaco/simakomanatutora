@@ -714,6 +714,93 @@ export interface WebinarRegistration {
 }
 
 /**
+ * Auto-webinar follow-up settings. A missing row deliberately means that
+ * follow-ups are disabled; this keeps newly created webinars silent until an
+ * operator explicitly opts in.
+ */
+export interface WebinarFollowupConfig {
+  webinar_id: string;
+  enabled_at: string;
+  first_delay_minutes: number;
+  second_delay_minutes: number;
+  is_active: number;
+  stage_enabled_at: string | null;
+  picker_delay_minutes: number;
+  no_show_delay_minutes: number;
+  booking_delay_minutes: number;
+  booking_second_delay_minutes: number;
+  booking_menu_id: string | null;
+  booking_url: string | null;
+}
+
+export interface WebinarFollowupConfigInput {
+  enabledAt: string;
+  firstDelayMinutes: number;
+  secondDelayMinutes: number;
+  isActive: boolean;
+  stageEnabledAt?: string | null;
+  pickerDelayMinutes: number;
+  noShowDelayMinutes: number;
+  bookingDelayMinutes: number;
+  bookingSecondDelayMinutes: number;
+  bookingMenuId?: string | null;
+  bookingUrl?: string | null;
+}
+
+export async function getWebinarFollowupConfig(
+  db: D1Database,
+  webinarId: string,
+): Promise<WebinarFollowupConfig | null> {
+  return db
+    .prepare('SELECT * FROM webinar_followup_configs WHERE webinar_id = ?')
+    .bind(webinarId)
+    .first<WebinarFollowupConfig>();
+}
+
+export async function upsertWebinarFollowupConfig(
+  db: D1Database,
+  webinarId: string,
+  input: WebinarFollowupConfigInput,
+): Promise<WebinarFollowupConfig> {
+  await db
+    .prepare(
+      `INSERT INTO webinar_followup_configs (
+         webinar_id, enabled_at, first_delay_minutes, second_delay_minutes,
+         is_active, stage_enabled_at, picker_delay_minutes, no_show_delay_minutes,
+         booking_delay_minutes, booking_second_delay_minutes, booking_menu_id, booking_url
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(webinar_id) DO UPDATE SET
+         enabled_at = excluded.enabled_at,
+         first_delay_minutes = excluded.first_delay_minutes,
+         second_delay_minutes = excluded.second_delay_minutes,
+         is_active = excluded.is_active,
+         stage_enabled_at = excluded.stage_enabled_at,
+         picker_delay_minutes = excluded.picker_delay_minutes,
+         no_show_delay_minutes = excluded.no_show_delay_minutes,
+         booking_delay_minutes = excluded.booking_delay_minutes,
+         booking_second_delay_minutes = excluded.booking_second_delay_minutes,
+         booking_menu_id = excluded.booking_menu_id,
+         booking_url = excluded.booking_url`,
+    )
+    .bind(
+      webinarId,
+      input.enabledAt,
+      input.firstDelayMinutes,
+      input.secondDelayMinutes,
+      input.isActive ? 1 : 0,
+      input.stageEnabledAt ?? null,
+      input.pickerDelayMinutes,
+      input.noShowDelayMinutes,
+      input.bookingDelayMinutes,
+      input.bookingSecondDelayMinutes,
+      input.bookingMenuId ?? null,
+      input.bookingUrl ?? null,
+    )
+    .run();
+  return (await getWebinarFollowupConfig(db, webinarId))!;
+}
+
+/**
  * 予約を upsert する (同一 friend×セッションは冪等)。
  * 新規作成時だけ true。重複リクエストでは false を返し、呼び出し元が
  * 受付確認を二重送信しないために使う。

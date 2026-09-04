@@ -18,6 +18,7 @@ import {
   type Webinar,
   type WebinarSakuraComment,
   type WebinarAnalytics,
+  type WebinarFollowupConfig,
   type WebinarUserComment,
 } from '@/lib/api'
 
@@ -832,10 +833,158 @@ function CtasTab({ webinarId }: { webinarId: string }) {
   )
 }
 
+function toDateTimeLocal(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function defaultFollowupConfig(): WebinarFollowupConfig {
+  return {
+    enabledAt: new Date().toISOString(),
+    firstDelayMinutes: 30,
+    secondDelayMinutes: 1440,
+    isActive: false,
+    stageEnabledAt: null,
+    pickerDelayMinutes: 30,
+    noShowDelayMinutes: 30,
+    bookingDelayMinutes: 30,
+    bookingSecondDelayMinutes: 1440,
+    bookingMenuId: null,
+    bookingUrl: null,
+  }
+}
+
+function FollowupTab({ webinarId }: { webinarId: string }) {
+  const [config, setConfig] = useState<WebinarFollowupConfig>(defaultFollowupConfig)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    webinarApi.followupConfig(webinarId)
+      .then((res) => setConfig(res.data ?? defaultFollowupConfig()))
+      .catch(() => setMessage('追客設定を読み込めませんでした。リロードしてください。'))
+      .finally(() => setLoaded(true))
+  }, [webinarId])
+
+  const update = (patch: Partial<WebinarFollowupConfig>) =>
+    setConfig((prev) => ({ ...prev, ...patch }))
+
+  const save = async () => {
+    if (!config.enabledAt || Number.isNaN(Date.parse(config.enabledAt))) {
+      setMessage('追客開始日時を入力してください。')
+      return
+    }
+    if (config.stageEnabledAt && Number.isNaN(Date.parse(config.stageEnabledAt))) {
+      setMessage('段階追客の開始日時が不正です。')
+      return
+    }
+    setSaving(true)
+    setMessage(null)
+    try {
+      const saved = await webinarApi.saveFollowupConfig(webinarId, config)
+      setConfig(saved.data)
+      setMessage(saved.data.isActive ? '追客を有効化して保存しました。' : '追客を停止した状態で保存しました。')
+    } catch (err) {
+      setMessage(`保存に失敗しました: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const delayInput = (
+    label: string,
+    key: 'firstDelayMinutes' | 'secondDelayMinutes' | 'pickerDelayMinutes' | 'noShowDelayMinutes' | 'bookingDelayMinutes' | 'bookingSecondDelayMinutes',
+  ) => (
+    <Input
+      label={label}
+      type="number"
+      min={0}
+      max={525600}
+      value={config[key]}
+      onChange={(e) => update({ [key]: Number(e.target.value) } as Partial<WebinarFollowupConfig>)}
+      className="w-40"
+    />
+  )
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm leading-6 text-gray-600">
+        予約後の未視聴、CTA後のフォーム未送信、フォーム送信後の相談未予約をLINEで追客します。保存するまで新規ウェビナーには送信されません。
+      </p>
+      {message && <p className="rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
+      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+        <Checkbox
+          label="追客を有効にする"
+          checked={config.isActive}
+          onCheckedChange={(checked) => update({ isActive: checked })}
+        />
+        <Input
+          label="追客開始日時"
+          type="datetime-local"
+          value={toDateTimeLocal(config.enabledAt)}
+          onChange={(e) => update({ enabledAt: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+          description="この日時以降の行動だけを追客対象にします。"
+          className="max-w-xs"
+        />
+      </section>
+
+      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="font-semibold text-slate-900">CTA後の未送信</h3>
+        <div className="flex flex-wrap gap-4">
+          {delayInput('1通目まで（分）', 'firstDelayMinutes')}
+          {delayInput('2通目まで（分）', 'secondDelayMinutes')}
+        </div>
+      </section>
+
+      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="font-semibold text-slate-900">申込から相談予約まで</h3>
+        <Input
+          label="段階追客の開始日時（任意）"
+          type="datetime-local"
+          value={config.stageEnabledAt ? toDateTimeLocal(config.stageEnabledAt) : ''}
+          onChange={(e) => update({ stageEnabledAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
+          description="空欄なら通常の追客開始日時から有効です。"
+          className="max-w-xs"
+        />
+        <div className="flex flex-wrap gap-4">
+          {delayInput('回選択後・未申込（分）', 'pickerDelayMinutes')}
+          {delayInput('申込後・未視聴（分）', 'noShowDelayMinutes')}
+          {delayInput('回答後・相談未予約 1通目（分）', 'bookingDelayMinutes')}
+          {delayInput('回答後・相談未予約 2通目（分）', 'bookingSecondDelayMinutes')}
+        </div>
+        <Input
+          label="相談メニューID（任意）"
+          value={config.bookingMenuId ?? ''}
+          onChange={(e) => update({ bookingMenuId: e.target.value || null })}
+          placeholder="booking_menus.id"
+          description="ウェビナー内の相談枠表示・予約に使うメニューです。"
+          className="max-w-xl font-mono text-sm"
+        />
+        <Input
+          label="相談予約URL（任意）"
+          type="url"
+          value={config.bookingUrl ?? ''}
+          onChange={(e) => update({ bookingUrl: e.target.value || null })}
+          placeholder="https://..."
+          description="追客メッセージ内の予約導線に使います。"
+          className="max-w-xl"
+        />
+      </section>
+      <Button size="sm" variant="primary" onClick={() => void save()} disabled={!loaded || saving} loading={saving}>
+        追客設定を保存
+      </Button>
+    </div>
+  )
+}
+
 const TABS = [
   ['analytics', '概要・分析'],
   ['settings', '配信設定'],
   ['ctas', 'CTA・フォーム'],
+  ['followups', '追客設定'],
   ['comments', 'コメント演出'],
 ] as const
 
@@ -927,6 +1076,7 @@ function EditWebinarInner() {
             {tab === 'settings' && <WebinarForm initial={webinar} />}
             {tab === 'comments' && <CommentsTab webinarId={webinar.id} />}
             {tab === 'ctas' && <CtasTab webinarId={webinar.id} />}
+            {tab === 'followups' && <FollowupTab webinarId={webinar.id} />}
             {tab === 'analytics' && <AnalyticsTab webinarId={webinar.id} durationSeconds={webinar.durationSeconds} />}
           </div>
         </div>

@@ -45,6 +45,8 @@ import {
   getUpcomingWebinarRegistration,
   getWebinarRegistration,
   recordWebinarPickerOpen,
+  getWebinarFollowupConfig,
+  upsertWebinarFollowupConfig,
 } from '@line-crm/db';
 import { verifyCallerLineUserId } from '../services/liff-auth.js';
 import { attachTagAndFireSideEffects } from '../services/friend-tag-attach.js';
@@ -1128,6 +1130,106 @@ webinarRoutes.get('/api/webinars/:id/user-comments', async (c) => {
     });
   } catch (err) {
     console.error('GET /api/webinars/:id/user-comments error:', err);
+    return c.json({ success: false, error: 'Internal server error' }, 500);
+  }
+});
+
+interface WebinarFollowupConfigBody {
+  enabledAt?: unknown;
+  firstDelayMinutes?: unknown;
+  secondDelayMinutes?: unknown;
+  isActive?: unknown;
+  stageEnabledAt?: unknown;
+  pickerDelayMinutes?: unknown;
+  noShowDelayMinutes?: unknown;
+  bookingDelayMinutes?: unknown;
+  bookingSecondDelayMinutes?: unknown;
+  bookingMenuId?: unknown;
+  bookingUrl?: unknown;
+}
+
+function serializeWebinarFollowupConfig(config: NonNullable<Awaited<ReturnType<typeof getWebinarFollowupConfig>>>) {
+  return {
+    enabledAt: config.enabled_at,
+    firstDelayMinutes: config.first_delay_minutes,
+    secondDelayMinutes: config.second_delay_minutes,
+    isActive: Boolean(config.is_active),
+    stageEnabledAt: config.stage_enabled_at,
+    pickerDelayMinutes: config.picker_delay_minutes,
+    noShowDelayMinutes: config.no_show_delay_minutes,
+    bookingDelayMinutes: config.booking_delay_minutes,
+    bookingSecondDelayMinutes: config.booking_second_delay_minutes,
+    bookingMenuId: config.booking_menu_id,
+    bookingUrl: config.booking_url,
+  };
+}
+
+function validateWebinarFollowupConfigBody(body: WebinarFollowupConfigBody) {
+  const enabledAt = typeof body.enabledAt === 'string' ? body.enabledAt : '';
+  const stageEnabledAt = typeof body.stageEnabledAt === 'string' && body.stageEnabledAt
+    ? body.stageEnabledAt
+    : null;
+  const delayFields = [
+    ['firstDelayMinutes', body.firstDelayMinutes],
+    ['secondDelayMinutes', body.secondDelayMinutes],
+    ['pickerDelayMinutes', body.pickerDelayMinutes],
+    ['noShowDelayMinutes', body.noShowDelayMinutes],
+    ['bookingDelayMinutes', body.bookingDelayMinutes],
+    ['bookingSecondDelayMinutes', body.bookingSecondDelayMinutes],
+  ] as const;
+  if (!enabledAt || Number.isNaN(Date.parse(enabledAt))) return 'invalid_enabled_at';
+  if (stageEnabledAt && Number.isNaN(Date.parse(stageEnabledAt))) return 'invalid_stage_enabled_at';
+  if (typeof body.isActive !== 'boolean') return 'invalid_is_active';
+  const delays: Record<string, number> = {};
+  for (const [key, raw] of delayFields) {
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0 || value > 525_600) return `invalid_${key}`;
+    delays[key] = value;
+  }
+  const bookingMenuId = typeof body.bookingMenuId === 'string' && body.bookingMenuId.trim()
+    ? body.bookingMenuId.trim()
+    : null;
+  const bookingUrl = typeof body.bookingUrl === 'string' && body.bookingUrl.trim()
+    ? body.bookingUrl.trim()
+    : null;
+  if (bookingMenuId && bookingMenuId.length > 128) return 'invalid_booking_menu_id';
+  if (bookingUrl && (!/^https?:\/\//.test(bookingUrl) || bookingUrl.length > 2_000)) {
+    return 'invalid_booking_url';
+  }
+  return {
+    enabledAt,
+    stageEnabledAt,
+    isActive: body.isActive,
+    firstDelayMinutes: delays.firstDelayMinutes,
+    secondDelayMinutes: delays.secondDelayMinutes,
+    pickerDelayMinutes: delays.pickerDelayMinutes,
+    noShowDelayMinutes: delays.noShowDelayMinutes,
+    bookingDelayMinutes: delays.bookingDelayMinutes,
+    bookingSecondDelayMinutes: delays.bookingSecondDelayMinutes,
+    bookingMenuId,
+    bookingUrl,
+  };
+}
+
+webinarRoutes.get('/api/webinars/:id/followup-config', requireRole('owner', 'admin'), async (c) => {
+  const id = c.req.param('id')!;
+  const webinar = await getWebinarById(c.env.DB, id);
+  if (!webinar) return c.json({ success: false, error: 'Not found' }, 404);
+  const config = await getWebinarFollowupConfig(c.env.DB, id);
+  return c.json({ success: true, data: config ? serializeWebinarFollowupConfig(config) : null });
+});
+
+webinarRoutes.put('/api/webinars/:id/followup-config', requireRole('owner', 'admin'), async (c) => {
+  try {
+    const id = c.req.param('id')!;
+    const webinar = await getWebinarById(c.env.DB, id);
+    if (!webinar) return c.json({ success: false, error: 'Not found' }, 404);
+    const input = validateWebinarFollowupConfigBody(await c.req.json<WebinarFollowupConfigBody>());
+    if (typeof input === 'string') return c.json({ success: false, error: input }, 400);
+    const config = await upsertWebinarFollowupConfig(c.env.DB, id, input);
+    return c.json({ success: true, data: serializeWebinarFollowupConfig(config) });
+  } catch (err) {
+    console.error('PUT /api/webinars/:id/followup-config error:', err);
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
